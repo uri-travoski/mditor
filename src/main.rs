@@ -85,6 +85,7 @@ impl Window {
         let menu = gio::Menu::new();
         menu.append(Some("Check for Updates…"), Some("app.check-updates"));
         menu.append(Some("Check for Updates on Startup"), Some("app.auto-update"));
+        menu.append(Some("About mditor"), Some("app.about"));
         let menu_btn = gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&menu).build();
         header.pack_end(&menu_btn);
 
@@ -726,6 +727,13 @@ fn main() -> glib::ExitCode {
             move |_, _| check_for_updates(&app, true)
         ));
         app.add_action(&check);
+        let about = gio::SimpleAction::new("about", None);
+        about.connect_activate(glib::clone!(
+            #[weak]
+            app,
+            move |_, _| show_about(&app)
+        ));
+        app.add_action(&about);
     });
     app.connect_activate(|app| {
         let w = target_window(app);
@@ -792,4 +800,19 @@ fn check_for_updates(app: &gtk::Application, manual: bool) {
             _ => {}
         }
     });
+}
+
+fn show_about(app: &gtk::Application) {
+    gtk::AboutDialog::builder()
+        .transient_for(&target_window(app).win)
+        .modal(true)
+        .program_name("mditor")
+        .version(update::CURRENT)
+        .comments("Fast, minimal Markdown viewer and editor")
+        .logo_icon_name(APP_ID)
+        .website(update::REPO_URL)
+        .website_label("github.com/uri-travoski/mditor")
+        .license_type(gtk::License::Gpl30)
+        .build()
+        .present();
 }

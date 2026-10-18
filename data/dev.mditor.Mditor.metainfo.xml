@@ -9,10 +9,13 @@
   <description>
     <p>mditor is a lightweight Markdown viewer and editor. Switch between a rendered view and a syntax-highlighted editor instantly, work on several files in tabs, and preview images and tables without a web engine.</p>
   </description>
+  <url type="homepage">https://github.com/uri-travoski/mditor</url>
+  <url type="bugtracker">https://github.com/uri-travoski/mditor/issues</url>
   <launchable type="desktop-id">dev.mditor.Mditor.desktop</launchable>
   <provides><binary>mditor</binary></provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.0.3" date="2026-10-18"/>
     <release version="1.0.2" date="2026-10-18"/>
     <release version="1.0.1" date="2026-10-18"/>
     <release version="1.0.0" date="2026-10-18"/>

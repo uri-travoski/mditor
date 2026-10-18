@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 const API: &str = "https://api.github.com/repos/uri-travoski/mditor/releases/latest";
+pub const REPO_URL: &str = "https://github.com/uri-travoski/mditor";
 pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
 
 pub enum Outcome {
