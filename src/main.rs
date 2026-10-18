@@ -673,12 +673,16 @@ fn target_window(app: &gtk::Application) -> Rc<Window> {
 }
 
 fn main() -> glib::ExitCode {
+    // WM_CLASS (X11) / app_id (Wayland) must equal the .desktop file's name so
+    // the taskbar and window switcher show the right icon.
+    glib::set_prgname(Some(APP_ID));
     let app = gtk::Application::builder()
         .application_id(APP_ID)
         .flags(gio::ApplicationFlags::HANDLES_OPEN)
         .build();
 
     app.connect_startup(|app| {
+        gtk::Window::set_default_icon_name(APP_ID);
         let css = gtk::CssProvider::new();
         css.load_from_data("scrolledwindow.mditor { background-color: @theme_base_color; }");
         if let Some(d) = gdk::Display::default() {

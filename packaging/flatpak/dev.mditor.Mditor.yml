@@ -26,6 +26,10 @@ modules:
       - install -Dm644 data/dev.mditor.Mditor.desktop /app/share/applications/dev.mditor.Mditor.desktop
       - install -Dm644 data/dev.mditor.Mditor.metainfo.xml /app/share/metainfo/dev.mditor.Mditor.metainfo.xml
       - install -Dm644 data/dev.mditor.Mditor.svg /app/share/icons/hicolor/scalable/apps/dev.mditor.Mditor.svg
+      - install -Dm644 data/icons/dev.mditor.Mditor-48.png /app/share/icons/hicolor/48x48/apps/dev.mditor.Mditor.png
+      - install -Dm644 data/icons/dev.mditor.Mditor-128.png /app/share/icons/hicolor/128x128/apps/dev.mditor.Mditor.png
+      - install -Dm644 data/icons/dev.mditor.Mditor-256.png /app/share/icons/hicolor/256x256/apps/dev.mditor.Mditor.png
+      - install -Dm644 data/icons/dev.mditor.Mditor-512.png /app/share/icons/hicolor/512x512/apps/dev.mditor.Mditor.png
     sources:
       - type: dir
         path: ../..
