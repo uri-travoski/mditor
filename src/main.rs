@@ -1,4 +1,5 @@
 mod render;
+mod update;
 
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
@@ -81,6 +82,11 @@ impl Window {
         header.pack_start(&save_btn);
         header.pack_start(&new_btn);
         header.pack_start(&name);
+        let menu = gio::Menu::new();
+        menu.append(Some("Check for Updates…"), Some("app.check-updates"));
+        menu.append(Some("Check for Updates on Startup"), Some("app.auto-update"));
+        let menu_btn = gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&menu).build();
+        header.pack_end(&menu_btn);
 
         let win = gtk::ApplicationWindow::builder()
             .application(app)
@@ -700,6 +706,22 @@ fn main() -> glib::ExitCode {
             }
         ));
         app.add_action(&new);
+
+        let auto = gio::SimpleAction::new_stateful("auto-update", None, &update::auto_check_enabled().to_variant());
+        auto.connect_change_state(|a, v| {
+            if let Some(v) = v {
+                a.set_state(v);
+                update::set_auto_check(v.get::<bool>().unwrap_or(true));
+            }
+        });
+        app.add_action(&auto);
+        let check = gio::SimpleAction::new("check-updates", None);
+        check.connect_activate(glib::clone!(
+            #[weak]
+            app,
+            move |_, _| check_for_updates(&app, true)
+        ));
+        app.add_action(&check);
     });
     app.connect_activate(|app| {
         let w = target_window(app);
@@ -707,6 +729,7 @@ fn main() -> glib::ExitCode {
             w.add_doc(None);
         }
         w.win.present();
+        startup_update_check(app);
     });
     app.connect_open(|app, files, _| {
         let w = target_window(app);
@@ -714,6 +737,55 @@ fn main() -> glib::ExitCode {
             w.add_doc(Some(f.clone()));
         }
         w.win.present();
+        startup_update_check(app);
     });
     app.run()
+}
+
+fn startup_update_check(app: &gtk::Application) {
+    thread_local! { static DONE: Cell<bool> = const { Cell::new(false) }; }
+    if DONE.with(|d| d.replace(true)) || !update::auto_check_enabled() {
+        return;
+    }
+    let app = app.clone();
+    glib::spawn_future_local(async move {
+        glib::timeout_future_seconds(3).await;
+        check_for_updates(&app, false);
+    });
+}
+
+/// `manual` checks also report "up to date" and errors; automatic ones stay silent.
+fn check_for_updates(app: &gtk::Application, manual: bool) {
+    let app = app.clone();
+    glib::spawn_future_local(async move {
+        let outcome = gio::spawn_blocking(update::check).await.unwrap_or_else(|_| update::Outcome::Failed("check failed".into()));
+        if std::env::var_os("MDITOR_TRACE").is_some() {
+            eprintln!("update check done: {}", match &outcome { update::Outcome::UpToDate => "up to date".to_string(), update::Outcome::Available { version, .. } => format!("available {version}"), update::Outcome::Failed(e) => format!("failed: {e}") });
+        }
+        let win = target_window(&app).win.clone();
+        let dlg = gtk::AlertDialog::builder();
+        match outcome {
+            update::Outcome::Available { version, url } => {
+                let dlg = dlg
+                    .message(format!("mditor {version} is available"))
+                    .detail(format!("You have {}.", update::CURRENT))
+                    .buttons(["Later", "Download"])
+                    .cancel_button(0)
+                    .default_button(1)
+                    .build();
+                dlg.choose(Some(&win), gio::Cancellable::NONE, move |r| {
+                    if r == Ok(1) {
+                        let _ = gio::AppInfo::launch_default_for_uri(&url, gio::AppLaunchContext::NONE);
+                    }
+                });
+            }
+            update::Outcome::UpToDate if manual => {
+                dlg.message("mditor is up to date").detail(format!("Version {}", update::CURRENT)).build().show(Some(&win));
+            }
+            update::Outcome::Failed(e) if manual => {
+                dlg.message("Could not check for updates").detail(e).build().show(Some(&win));
+            }
+            _ => {}
+        }
+    });
 }

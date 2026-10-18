@@ -9,6 +9,7 @@ license = "GPL-3.0-or-later"
 gtk = { package = "gtk4", version = "0.10", features = ["v4_10"] }
 sv = { package = "sourceview5", version = "0.10" }
 pulldown-cmark = { version = "0.13", default-features = false }
+ureq = { version = "2", default-features = false, features = ["tls"] }
 
 [profile.release]
 opt-level = 3
