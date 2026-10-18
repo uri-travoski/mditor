@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=mditor
+GenericName=Markdown Editor
+Comment=Fast Markdown viewer and editor
+Exec=mditor %U
+Icon=dev.mditor.Mditor
+Terminal=false
+Categories=Utility;TextEditor;GTK;
+MimeType=text/markdown;text/x-markdown;
+Keywords=markdown;editor;viewer;md;
+StartupWMClass=dev.mditor.Mditor

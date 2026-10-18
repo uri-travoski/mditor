@@ -1,0 +1,45 @@
+[package]
+name = "mditor"
+version = "1.0.0"
+edition = "2021"
+description = "Fast, minimal Markdown viewer and editor"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+gtk = { package = "gtk4", version = "0.10", features = ["v4_10"] }
+sv = { package = "sourceview5", version = "0.10" }
+pulldown-cmark = { version = "0.13", default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[package.metadata.deb]
+name = "mditor"
+section = "editors"
+priority = "optional"
+depends = "$auto"
+extended-description = "Fast, low-resource Markdown viewer and editor with instant View/Edit switching, tabs and a native (no WebKit) preview."
+assets = [
+    ["target/release/mditor", "usr/bin/", "755"],
+    ["data/dev.mditor.Mditor.desktop", "usr/share/applications/", "644"],
+    ["data/dev.mditor.Mditor.metainfo.xml", "usr/share/metainfo/", "644"],
+    ["data/dev.mditor.Mditor.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "mditor"
+license = "GPL-3.0-or-later"
+assets = [
+    { source = "target/release/mditor", dest = "/usr/bin/mditor", mode = "755" },
+    { source = "data/dev.mditor.Mditor.desktop", dest = "/usr/share/applications/dev.mditor.Mditor.desktop", mode = "644" },
+    { source = "data/dev.mditor.Mditor.metainfo.xml", dest = "/usr/share/metainfo/dev.mditor.Mditor.metainfo.xml", mode = "644" },
+    { source = "data/dev.mditor.Mditor.svg", dest = "/usr/share/icons/hicolor/scalable/apps/dev.mditor.Mditor.svg", mode = "644" },
+]
+
+[package.metadata.generate-rpm.requires]
+gtk4 = ">= 4.10"
+gtksourceview5 = "*"

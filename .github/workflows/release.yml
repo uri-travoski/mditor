@@ -1,0 +1,61 @@
+name: Release packages
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deb-rpm:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libgtksourceview-5-dev pkg-config
+      - run: cargo install cargo-deb cargo-generate-rpm --locked
+      - run: cargo build --release --locked
+      - run: cargo deb --no-build --no-strip -o mditor_amd64.deb
+      - run: cargo generate-rpm -o mditor.x86_64.rpm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-rpm
+          path: |
+            mditor_amd64.deb
+            mditor.x86_64.rpm
+
+  flatpak:
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          pip install aiohttp toml
+          curl -fsSL -o flatpak-cargo-generator.py https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+          python3 flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/cargo-sources.json
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: mditor.flatpak
+          manifest-path: packaging/flatpak/dev.mditor.Mditor.yml
+          cache-key: flatpak-${{ github.sha }}
+      
+  release:
+    needs: [deb-rpm, flatpak]
+    runs-on: ubuntu-24.04
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            mditor_amd64.deb
+            mditor.x86_64.rpm
+            mditor.flatpak
+          generate_release_notes: true

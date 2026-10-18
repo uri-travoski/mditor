@@ -1,0 +1,31 @@
+app-id: dev.mditor.Mditor
+runtime: org.gnome.Platform
+runtime-version: '48'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: mditor
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --filesystem=home
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/mditor/cargo
+modules:
+  - name: mditor
+    buildsystem: simple
+    build-commands:
+      - cargo --offline fetch --manifest-path Cargo.toml
+      - cargo --offline build --release
+      - install -Dm755 target/release/mditor /app/bin/mditor
+      - install -Dm644 data/dev.mditor.Mditor.desktop /app/share/applications/dev.mditor.Mditor.desktop
+      - install -Dm644 data/dev.mditor.Mditor.metainfo.xml /app/share/metainfo/dev.mditor.Mditor.metainfo.xml
+      - install -Dm644 data/dev.mditor.Mditor.svg /app/share/icons/hicolor/scalable/apps/dev.mditor.Mditor.svg
+    sources:
+      - type: dir
+        path: ../..
+      - cargo-sources.json

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.mditor.Mditor</id>
+  <name>mditor</name>
+  <developer id="dev.mditor"><name>mditor contributors</name></developer>
+  <summary>Fast, minimal Markdown viewer and editor</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>mditor is a lightweight Markdown viewer and editor. Switch between a rendered view and a syntax-highlighted editor instantly, work on several files in tabs, and preview images and tables without a web engine.</p>
+  </description>
+  <launchable type="desktop-id">dev.mditor.Mditor.desktop</launchable>
+  <provides><binary>mditor</binary></provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.0.0" date="2026-10-18"/>
+  </releases>
+</component>
