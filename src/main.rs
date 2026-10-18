@@ -20,7 +20,6 @@ struct Window {
     notebook: gtk::Notebook,
     view_btn: gtk::ToggleButton,
     edit_btn: gtk::ToggleButton,
-    name: gtk::Label,
     docs: RefCell<Vec<Rc<Doc>>>,
     syncing: Cell<bool>,
 }
@@ -73,36 +72,49 @@ impl Window {
         let new_btn = gtk::Button::from_icon_name("tab-new-symbolic");
         new_btn.set_action_name(Some("win.new-tab"));
         new_btn.set_tooltip_text(Some("New tab (Ctrl+T)"));
-        let name = gtk::Label::builder().ellipsize(gtk::pango::EllipsizeMode::Middle).build();
-        name.add_css_class("dim-label");
+        let app_icon = gtk::Image::from_icon_name(APP_ID);
+        app_icon.set_pixel_size(24);
+        app_icon.set_margin_end(4);
 
-        let header = gtk::HeaderBar::new();
-        header.set_title_widget(Some(&toggles));
-        header.pack_start(&open_btn);
-        header.pack_start(&save_btn);
-        header.pack_start(&new_btn);
-        header.pack_start(&name);
         let menu = gio::Menu::new();
         menu.append(Some("Check for Updates…"), Some("app.check-updates"));
         menu.append(Some("Check for Updates on Startup"), Some("app.auto-update"));
         menu.append(Some("About mditor"), Some("app.about"));
         let menu_btn = gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&menu).build();
-        header.pack_end(&menu_btn);
+
+        // A plain toolbar inside the window (no custom titlebar) so the system
+        // draws the title bar and its minimize/maximize/close buttons.
+        let start = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        for w in [app_icon.upcast_ref::<gtk::Widget>(), open_btn.upcast_ref(), save_btn.upcast_ref(), new_btn.upcast_ref()] {
+            start.append(w);
+        }
+        let bar = gtk::CenterBox::new();
+        bar.add_css_class("toolbar");
+        bar.set_start_widget(Some(&start));
+        bar.set_center_widget(Some(&toggles));
+        bar.set_end_widget(Some(&menu_btn));
+        bar.set_margin_start(6);
+        bar.set_margin_end(6);
+        bar.set_margin_top(6);
+        bar.set_margin_bottom(6);
+
+        notebook.set_vexpand(true);
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        content.append(&bar);
+        content.append(&notebook);
 
         let win = gtk::ApplicationWindow::builder()
             .application(app)
             .default_width(900)
             .default_height(700)
-            .child(&notebook)
+            .child(&content)
             .build();
-        win.set_titlebar(Some(&header));
 
         let w = Rc::new(Window {
             win,
             notebook,
             view_btn,
             edit_btn,
-            name,
             docs: RefCell::new(vec![]),
             syncing: Cell::new(false),
         });
@@ -244,7 +256,6 @@ impl Window {
         let m = if doc.buffer.is_modified() { "• " } else { "" };
         let n = doc.display_name();
         self.win.set_title(Some(&format!("{m}{n} — mditor")));
-        self.name.set_text(&format!("{m}{n}"));
     }
 
     fn refresh(&self) {
@@ -677,6 +688,10 @@ fn main() -> glib::ExitCode {
     // WM_CLASS (X11) / app_id (Wayland) must equal the .desktop file's name so
     // the taskbar and window switcher show the right icon.
     glib::set_prgname(Some(APP_ID));
+    // On X11 let the window manager draw the title bar and its buttons.
+    if std::env::var_os("WAYLAND_DISPLAY").is_none() && std::env::var_os("GTK_CSD").is_none() {
+        std::env::set_var("GTK_CSD", "0");
+    }
     let app = gtk::Application::builder()
         .application_id(APP_ID)
         .flags(gio::ApplicationFlags::HANDLES_OPEN)
@@ -812,7 +827,7 @@ fn show_about(app: &gtk::Application) {
         .logo_icon_name(APP_ID)
         .website(update::REPO_URL)
         .website_label("github.com/uri-travoski/mditor")
-        .license_type(gtk::License::Gpl30)
+        .copyright("© 2026 mditor contributors · GPL-3.0-or-later")
         .build()
         .present();
 }
