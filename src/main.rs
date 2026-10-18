@@ -1,4 +1,5 @@
 mod render;
+mod settings;
 mod update;
 
 use gtk::prelude::*;
@@ -11,7 +12,14 @@ use sv::prelude::*;
 const APP_ID: &str = "dev.mditor.Mditor";
 const MAX_WIDTH: i32 = 760;
 
+const FONT_MIN: i32 = -3;
+const FONT_MAX: i32 = 12;
+
 thread_local! {
+    static FONT_OFFSET: Cell<i32> = const { Cell::new(0) };
+    /// User-chosen default size in pt; None follows the system font.
+    static FONT_BASE: Cell<Option<f64>> = const { Cell::new(None) };
+    static FONT_CSS: gtk::CssProvider = gtk::CssProvider::new();
     static WINDOWS: RefCell<Vec<Rc<Window>>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -77,6 +85,12 @@ impl Window {
         app_icon.set_margin_end(4);
 
         let menu = gio::Menu::new();
+        let zoom = gio::Menu::new();
+        zoom.append(Some("Increase Font Size"), Some("app.zoom-in"));
+        zoom.append(Some("Decrease Font Size"), Some("app.zoom-out"));
+        zoom.append(Some("Reset Font Size"), Some("app.zoom-reset"));
+        zoom.append(Some("Default Font Size…"), Some("app.font-default"));
+        menu.append_section(None, &zoom);
         menu.append(Some("Check for Updates…"), Some("app.check-updates"));
         menu.append(Some("Check for Updates on Startup"), Some("app.auto-update"));
         menu.append(Some("About mditor"), Some("app.about"));
@@ -715,6 +729,9 @@ fn main() -> glib::ExitCode {
         ] {
             app.set_accels_for_action(a, &[k]);
         }
+        app.set_accels_for_action("app.zoom-in", &["<Ctrl>plus", "<Ctrl>equal", "<Ctrl>KP_Add"]);
+        app.set_accels_for_action("app.zoom-out", &["<Ctrl>minus", "<Ctrl>KP_Subtract"]);
+        app.set_accels_for_action("app.zoom-reset", &["<Ctrl>0", "<Ctrl>KP_0"]);
         let new = gio::SimpleAction::new("new-window", None);
         new.connect_activate(glib::clone!(
             #[weak]
@@ -742,6 +759,27 @@ fn main() -> glib::ExitCode {
             move |_, _| check_for_updates(&app, true)
         ));
         app.add_action(&check);
+        let offset = settings::get("font_offset").and_then(|v| v.parse().ok()).unwrap_or(0).clamp(FONT_MIN, FONT_MAX);
+        if let Some(d) = gdk::Display::default() {
+            FONT_CSS.with(|c| gtk::style_context_add_provider_for_display(&d, c, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION));
+        }
+        FONT_BASE.with(|b| b.set(settings::get("font_base").and_then(|v| v.parse().ok()).filter(|v: &f64| (6.0..=40.0).contains(v))));
+        set_font_offset(offset);
+        let fd = gio::SimpleAction::new("font-default", None);
+        fd.connect_activate(glib::clone!(
+            #[weak]
+            app,
+            move |_, _| show_font_dialog(&app)
+        ));
+        app.add_action(&fd);
+        for (name, delta) in [("zoom-in", Some(1)), ("zoom-out", Some(-1)), ("zoom-reset", None)] {
+            let a = gio::SimpleAction::new(name, None);
+            a.connect_activate(move |_, _| {
+                let cur = FONT_OFFSET.with(Cell::get);
+                set_font_offset(delta.map_or(0, |d| cur + d));
+            });
+            app.add_action(&a);
+        }
         let about = gio::SimpleAction::new("about", None);
         about.connect_activate(glib::clone!(
             #[weak]
@@ -830,4 +868,77 @@ fn show_about(app: &gtk::Application) {
         .copyright("© 2026 mditor contributors · GPL-3.0-or-later")
         .build()
         .present();
+}
+
+fn system_font_size() -> f64 {
+    gtk::Settings::default()
+        .and_then(|s| s.gtk_font_name())
+        .and_then(|f| f.rsplit(' ').next().and_then(|n| n.parse::<f64>().ok()))
+        .unwrap_or(11.0)
+}
+
+/// Text size = default size (user's, else the system UI font) + zoom `offset` points,
+/// for the editor and preview.
+fn set_font_offset(offset: i32) {
+    let offset = offset.clamp(FONT_MIN, FONT_MAX);
+    FONT_OFFSET.with(|o| o.set(offset));
+    settings::set("font_offset", &offset.to_string());
+    apply_font();
+}
+
+fn apply_font() {
+    let base = FONT_BASE.with(Cell::get).unwrap_or_else(system_font_size);
+    let size = (base + FONT_OFFSET.with(Cell::get) as f64).max(6.0);
+    FONT_CSS.with(|c| c.load_from_data(&format!("textview, textview label {{ font-size: {size}pt; }}")));
+}
+
+fn show_font_dialog(app: &gtk::Application) {
+    let current = FONT_BASE.with(Cell::get).unwrap_or_else(system_font_size);
+    let spin = gtk::SpinButton::with_range(6.0, 40.0, 1.0);
+    spin.set_value(current.round());
+    spin.connect_value_changed(|s| {
+        let v = s.value();
+        FONT_BASE.with(|b| b.set(Some(v)));
+        settings::set("font_base", &v.to_string());
+        apply_font();
+    });
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    row.append(&gtk::Label::new(Some("Default size (pt)")));
+    row.append(&spin);
+    let system = gtk::Button::with_label("Use System Size");
+    system.connect_clicked(glib::clone!(
+        #[weak]
+        spin,
+        move |_| {
+            FONT_BASE.with(|b| b.set(None));
+            settings::set("font_base", "system");
+            apply_font();
+            spin.set_value(system_font_size().round());
+        }
+    ));
+    let close = gtk::Button::with_label("Close");
+    let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    buttons.set_halign(gtk::Align::End);
+    buttons.append(&system);
+    buttons.append(&close);
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 14);
+    body.set_margin_top(18);
+    body.set_margin_bottom(18);
+    body.set_margin_start(18);
+    body.set_margin_end(18);
+    body.append(&row);
+    body.append(&buttons);
+    let dlg = gtk::Window::builder()
+        .title("Default Font Size")
+        .modal(true)
+        .resizable(false)
+        .transient_for(&target_window(app).win)
+        .child(&body)
+        .build();
+    close.connect_clicked(glib::clone!(
+        #[weak]
+        dlg,
+        move |_| dlg.close()
+    ));
+    dlg.present();
 }

@@ -1,7 +1,6 @@
 //! Update checks against the latest GitHub release, plus the persisted
 //! "check on startup" preference.
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 const API: &str = "https://api.github.com/repos/uri-travoski/mditor/releases/latest";
@@ -14,23 +13,13 @@ pub enum Outcome {
     Failed(String),
 }
 
-fn settings_path() -> PathBuf {
-    gtk::glib::user_config_dir().join("mditor").join("settings")
-}
-
 /// Defaults to on when nothing has been saved yet.
 pub fn auto_check_enabled() -> bool {
-    std::fs::read_to_string(settings_path())
-        .map(|s| !s.lines().any(|l| l.trim() == "auto_update=false"))
-        .unwrap_or(true)
+    crate::settings::get("auto_update").as_deref() != Some("false")
 }
 
 pub fn set_auto_check(on: bool) {
-    let p = settings_path();
-    if let Some(dir) = p.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let _ = std::fs::write(p, format!("auto_update={on}\n"));
+    crate::settings::set("auto_update", &on.to_string());
 }
 
 /// Blocking; run it off the main thread.
