@@ -10,7 +10,7 @@ use std::rc::{Rc, Weak};
 use sv::prelude::*;
 
 const APP_ID: &str = "dev.mditor.Mditor";
-const MAX_WIDTH: i32 = 760;
+const MAX_WIDTH: i32 = 950;
 
 const FONT_MIN: i32 = -3;
 const FONT_MAX: i32 = 12;

@@ -10,7 +10,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-const MAX_CONTENT_WIDTH: i32 = 760;
+const MAX_CONTENT_WIDTH: i32 = 950;
 const OBJ: &str = "\u{FFFC}";
 
 pub struct Tags {
