@@ -1,3 +1,4 @@
+mod obs;
 mod render;
 mod settings;
 mod update;
@@ -42,6 +43,7 @@ struct Doc {
     file: RefCell<Option<gio::File>>,
     stale: Cell<bool>,
     rendered: RefCell<render::Rendered>,
+    link_cb: RefCell<Option<render::LinkCb>>,
     label: gtk::Label,
 }
 
@@ -444,6 +446,7 @@ impl Doc {
             file: RefCell::new(None),
             stale: Cell::new(true),
             rendered: RefCell::new(Default::default()),
+            link_cb: RefCell::new(None),
             label,
         });
         d.wire();
@@ -452,6 +455,15 @@ impl Doc {
 
     fn wire(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
+        {
+            let weak = weak.clone();
+            let cb: render::LinkCb = Rc::new(move |u: &str| {
+                if let Some(d) = weak.upgrade() {
+                    d.follow(u);
+                }
+            });
+            *self.link_cb.borrow_mut() = Some(cb);
+        }
         self.buffer.connect_changed({
             let weak = weak.clone();
             move |_| {
@@ -479,6 +491,10 @@ impl Doc {
                 }
                 if let Some(url) = d.link_at(x, y) {
                     d.follow(&url);
+                } else if let Some(off) = d.offset_at(x, y) {
+                    if let Some(f) = d.rendered.borrow().fold_at(off) {
+                        f.toggle();
+                    }
                 }
             }
         });
@@ -488,7 +504,8 @@ impl Doc {
             let weak = weak.clone();
             move |_, x, y| {
                 let Some(d) = weak.upgrade() else { return };
-                let c = if d.link_at(x, y).is_some() { "pointer" } else { "text" };
+                let fold = d.offset_at(x, y).is_some_and(|o| d.rendered.borrow().fold_at(o).is_some());
+                let c = if fold || d.link_at(x, y).is_some() { "pointer" } else { "text" };
                 d.preview.set_cursor_from_name(Some(c));
             }
         });
@@ -496,17 +513,65 @@ impl Doc {
     }
 
     fn follow(&self, url: &str) {
-        let local = !url.contains(':') && !url.starts_with('#');
-        if !local {
+        let Some(w) = self.win.upgrade() else { return };
+        if let Some(t) = url.strip_prefix("wiki:") {
+            let (name, frag) = t.split_once('#').unwrap_or((t, ""));
+            if name.is_empty() {
+                self.goto_heading(frag);
+                return;
+            }
+            let Some(base) = self.base_dir() else { return };
+            if let Some(p) = obs::resolve_note(&base, name) {
+                let d = w.add_doc(Some(gio::File::for_path(p)));
+                if !frag.is_empty() {
+                    d.goto_heading(frag);
+                }
+            }
+            return;
+        }
+        if let Some(frag) = url.strip_prefix('#') {
+            let frag = glib::uri_unescape_string(frag, None::<&str>).map(|s| s.to_string()).unwrap_or_else(|| frag.to_string());
+            self.goto_heading(&frag);
+            return;
+        }
+        if url.contains(':') {
             let _ = gio::AppInfo::launch_default_for_uri(url, gio::AppLaunchContext::NONE);
             return;
         }
-        let rel = url.split('#').next().unwrap_or("");
-        let (Some(base), Some(w)) = (self.base_dir(), self.win.upgrade()) else { return };
-        let p = base.join(rel);
-        if !rel.is_empty() && p.is_file() {
-            w.add_doc(Some(gio::File::for_path(p)));
+        let (rel, frag) = url.split_once('#').unwrap_or((url, ""));
+        let rel = glib::uri_unescape_string(rel, None::<&str>).map(|s| s.to_string()).unwrap_or_else(|| rel.to_string());
+        let Some(base) = self.base_dir() else { return };
+        let p = base.join(&rel);
+        if rel.is_empty() || !p.is_file() {
+            return;
         }
+        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        if matches!(ext.as_str(), "md" | "markdown" | "txt" | "mdown") {
+            let d = w.add_doc(Some(gio::File::for_path(p)));
+            if !frag.is_empty() {
+                d.goto_heading(frag);
+            }
+        } else {
+            let _ = gio::AppInfo::launch_default_for_uri(&gio::File::for_path(p).uri(), gio::AppLaunchContext::NONE);
+        }
+    }
+
+    fn goto_heading(&self, frag: &str) {
+        if !self.is_view() {
+            self.set_mode(true);
+        }
+        if self.stale.get() {
+            self.render_preview();
+        }
+        let off = self.rendered.borrow().heading_offset(frag);
+        if let Some(off) = off {
+            Self::scroll_to_offset(&self.preview, off);
+        }
+    }
+
+    fn offset_at(&self, x: f64, y: f64) -> Option<i32> {
+        let (bx, by) = self.preview.window_to_buffer_coords(gtk::TextWindowType::Widget, x as i32, y as i32);
+        Some(self.preview.iter_at_location(bx, by)?.offset())
     }
 
     fn link_at(&self, x: f64, y: f64) -> Option<String> {
@@ -557,8 +622,9 @@ impl Doc {
 
     fn render_preview(&self) {
         let t0 = std::time::Instant::now();
+        let cb = self.link_cb.borrow().clone().unwrap_or_else(|| Rc::new(|_: &str| {}));
         let text = self.buffer.text(&self.buffer.start_iter(), &self.buffer.end_iter(), false);
-        let r = render::render(&self.preview, &self.tags, &text, self.base_dir().as_deref());
+        let r = render::render(&self.preview, &self.tags, &text, self.base_dir().as_deref(), &cb);
         *self.rendered.borrow_mut() = r;
         if std::env::var_os("MDITOR_TRACE").is_some() {
             eprintln!("render {} bytes: {:?}", text.len(), t0.elapsed());
@@ -714,7 +780,7 @@ fn main() -> glib::ExitCode {
     app.connect_startup(|app| {
         gtk::Window::set_default_icon_name(APP_ID);
         let css = gtk::CssProvider::new();
-        css.load_from_data("scrolledwindow.mditor { background-color: @theme_base_color; }");
+        css.load_from_data("scrolledwindow.mditor { background-color: @theme_base_color; }\n.mdtable { border-top: 1px solid alpha(currentColor, 0.22); border-left: 1px solid alpha(currentColor, 0.22); }\n.mdcell { padding: 6px 12px; border-right: 1px solid alpha(currentColor, 0.22); border-bottom: 1px solid alpha(currentColor, 0.22); }\n.mdhead { background-color: alpha(currentColor, 0.06); }\n.mdmedia { border: 1px solid alpha(currentColor, 0.22); border-radius: 8px; padding: 10px; background-color: alpha(currentColor, 0.04); }");
         if let Some(d) = gdk::Display::default() {
             gtk::style_context_add_provider_for_display(&d, &css, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
         }
