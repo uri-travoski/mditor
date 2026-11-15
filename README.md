@@ -9,7 +9,7 @@ Fast, low-resource Markdown viewer and editor (Rust, GTK4, GtkSourceView 5, pull
 
 ## Install
 
-Download the `.deb`, `.rpm` or `.flatpak` from the latest GitHub Release.
+Download the `.deb`, `.rpm`, `.flatpak` or `.AppImage` from the latest GitHub Release.
 
 ## Build
 

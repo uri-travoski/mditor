@@ -1528,49 +1528,19 @@ fn table_widget(t: &TableData, cb: &LinkCb) -> gtk::Widget {
 
 /// Keep an anchored widget as wide as the text column (max width, minus margins).
 fn fit_width(view: &gtk::TextView, w: &gtk::Widget) {
-    let Some(sw) = view.parent().and_then(|p| p.downcast::<gtk::ScrolledWindow>().ok()) else { return };
-    let adj = sw.hadjustment();
-    let apply = {
-        let w = w.downgrade();
-        let view = view.downgrade();
-        move |a: &gtk::Adjustment| {
-            let (Some(w), Some(view)) = (w.upgrade(), view.upgrade()) else { return };
-            // the page size already excludes the view's own margins
-            let avail = a.page_size() as i32;
-            let _ = &view;
-            if avail > 50 {
-                w.set_size_request(avail, -1);
-            }
-        }
+    let avail = (view.width() - view.margin_start() - view.margin_end()).min(MAX_CONTENT_WIDTH);
+    let avail = if avail > 50 {
+        avail
+    } else if let Some(sw) = view.parent().and_then(|p| p.downcast::<gtk::ScrolledWindow>().ok()) {
+        let pz = sw.hadjustment().page_size() as i32;
+        let m = ((pz - MAX_CONTENT_WIDTH) / 2).max(24);
+        (pz - 2 * m).min(MAX_CONTENT_WIDTH)
+    } else {
+        MAX_CONTENT_WIDTH - 48
     };
-    apply(&adj);
-    let apply = Rc::new(apply);
-    let id = adj.connect_notify_local(Some("page-size"), {
-        let apply = apply.clone();
-        move |a, _| apply(a)
-    });
-    let vid = view.connect_notify_local(Some("margin-start"), {
-        let apply = apply.clone();
-        let adj = adj.downgrade();
-        move |_, _| {
-            if let Some(a) = adj.upgrade() {
-                apply(&a);
-            }
-        }
-    });
-    let adj2 = adj.downgrade();
-    let view2 = view.downgrade();
-    let ids = RefCell::new(Some((id, vid)));
-    w.connect_destroy(move |_| {
-        if let Some((id, vid)) = ids.borrow_mut().take() {
-            if let Some(a) = adj2.upgrade() {
-                a.disconnect(id);
-            }
-            if let Some(v) = view2.upgrade() {
-                v.disconnect(vid);
-            }
-        }
-    });
+    if avail > 50 {
+        w.set_size_request(avail, -1);
+    }
 }
 
 // ------------------------------------------------------------ images & media

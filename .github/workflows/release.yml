@@ -9,23 +9,25 @@ permissions:
   contents: write
 
 jobs:
-  deb-rpm:
+  deb-rpm-appimage:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libgtksourceview-5-dev pkg-config
+          sudo apt-get install -y libgtk-4-dev libgtksourceview-5-dev pkg-config libfuse2* file desktop-file-utils librsvg2-common
       - run: cargo install cargo-deb cargo-generate-rpm --locked
       - run: cargo build --release --locked
       - run: cargo deb --no-build --no-strip -o mditor_amd64.deb
       - run: cargo generate-rpm -o mditor.x86_64.rpm
+      - run: ./packaging/appimage/build.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: deb-rpm
+          name: packages
           path: |
             mditor_amd64.deb
             mditor.x86_64.rpm
+            mditor-x86_64.AppImage
 
   flatpak:
     runs-on: ubuntu-24.04
@@ -45,7 +47,7 @@ jobs:
           cache-key: flatpak-${{ github.sha }}
       
   release:
-    needs: [deb-rpm, flatpak]
+    needs: [deb-rpm-appimage, flatpak]
     runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -57,5 +59,6 @@ jobs:
           files: |
             mditor_amd64.deb
             mditor.x86_64.rpm
+            mditor-x86_64.AppImage
             mditor.flatpak
           generate_release_notes: true

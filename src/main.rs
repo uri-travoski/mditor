@@ -45,6 +45,8 @@ struct Doc {
     rendered: RefCell<render::Rendered>,
     link_cb: RefCell<Option<render::LinkCb>>,
     label: gtk::Label,
+    last_render_width: Cell<i32>,
+    resize_timer: RefCell<Option<glib::SourceId>>,
 }
 
 fn centered(sw: &gtk::ScrolledWindow, view: &impl IsA<gtk::TextView>) {
@@ -448,6 +450,36 @@ impl Doc {
             rendered: RefCell::new(Default::default()),
             link_cb: RefCell::new(None),
             label,
+            last_render_width: Cell::new(0),
+            resize_timer: RefCell::new(None),
+        });
+
+        preview_sw.hadjustment().connect_notify_local(Some("page-size"), {
+            let weak = Rc::downgrade(&d);
+            move |a, _| {
+                let Some(d) = weak.upgrade() else { return };
+                let pz = a.page_size() as i32;
+                let m = ((pz - MAX_WIDTH) / 2).max(24);
+                let content_width = (pz - 2 * m).clamp(50, MAX_WIDTH);
+                if content_width > 50 && content_width != d.last_render_width.get() {
+                    if let Some(src) = d.resize_timer.borrow_mut().take() {
+                        src.remove();
+                    }
+                    let weak2 = weak.clone();
+                    let src = glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
+                        if let Some(d) = weak2.upgrade() {
+                            d.resize_timer.borrow_mut().take();
+                            if d.is_view() {
+                                d.render_preview();
+                            } else {
+                                d.stale.set(true);
+                            }
+                        }
+                        glib::ControlFlow::Break
+                    });
+                    *d.resize_timer.borrow_mut() = Some(src);
+                }
+            }
         });
         d.wire();
         d
@@ -624,8 +656,36 @@ impl Doc {
         let t0 = std::time::Instant::now();
         let cb = self.link_cb.borrow().clone().unwrap_or_else(|| Rc::new(|_: &str| {}));
         let text = self.buffer.text(&self.buffer.start_iter(), &self.buffer.end_iter(), false);
+
+        // Preserve scroll position across re-renders
+        let (top_offset, vadj_val) = if let Some(vadj) = self.preview.vadjustment() {
+            let rect = self.preview.visible_rect();
+            let (top, _) = self.preview.line_at_y(rect.y());
+            (top.offset(), vadj.value())
+        } else {
+            (0, 0.0)
+        };
+
         let r = render::render(&self.preview, &self.tags, &text, self.base_dir().as_deref(), &cb);
         *self.rendered.borrow_mut() = r;
+
+        let w = if let Some(sw) = self.preview.parent().and_then(|p| p.downcast::<gtk::ScrolledWindow>().ok()) {
+            let pz = sw.hadjustment().page_size() as i32;
+            let m = ((pz - MAX_WIDTH) / 2).max(24);
+            (pz - 2 * m).clamp(50, MAX_WIDTH)
+        } else {
+            MAX_WIDTH
+        };
+        self.last_render_width.set(w);
+
+        if vadj_val == 0.0 {
+            if let Some(vadj) = self.preview.vadjustment() {
+                vadj.set_value(0.0);
+            }
+        } else if top_offset > 0 {
+            Self::scroll_to_offset(&self.preview, top_offset);
+        }
+
         if std::env::var_os("MDITOR_TRACE").is_some() {
             eprintln!("render {} bytes: {:?}", text.len(), t0.elapsed());
         }
@@ -956,6 +1016,17 @@ fn apply_font() {
     let base = FONT_BASE.with(Cell::get).unwrap_or_else(system_font_size);
     let size = (base + FONT_OFFSET.with(Cell::get) as f64).max(6.0);
     FONT_CSS.with(|c| c.load_from_data(&format!("textview, textview label {{ font-size: {size}pt; }}")));
+    WINDOWS.with(|wins| {
+        for w in wins.borrow().iter() {
+            for d in w.docs.borrow().iter() {
+                if d.is_view() {
+                    d.render_preview();
+                } else {
+                    d.stale.set(true);
+                }
+            }
+        }
+    });
 }
 
 fn show_font_dialog(app: &gtk::Application) {

@@ -1,2 +1,8 @@
 target
 .env
+*.AppImage
+build-appimage/
+*.deb
+*.rpm
+*.flatpak
+
